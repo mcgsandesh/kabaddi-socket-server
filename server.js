@@ -13,74 +13,81 @@ const io = new Server(server, {
     }
 });
 
-// 🧠 [SCALABLE GLOBAL MEMORY] - भविष्यातील विस्तारासाठी तयार केलेली मध्यवर्ती मेमरी
+// 🧠 [SCALABLE GLOBAL MEMORY] - मध्यवर्ती फ्युचर-प्रूफ मेमरी रचना
 let globalAppData = {
-    activeMatches: {},       // सध्या मैदानावर सुरू असलेले सर्व सामने (Live / 1st_Half_End)
+    activeMatches: {},       // सध्या मैदानावर सुरू असलेले सर्व सामने (Live, 1st_Half_End, इ.)
     completedMatches: {},    // 🏆 फ्युचरसाठी: संपलेले सामने (History)
     tournaments: {},         // 🏟️ फ्युचरसाठी: सर्व स्पर्धांचा डेटा
-    playersStats: {}         // 🏃 फ्युचरसाठी: प्लेअर्सचे लाईव्ह आकडे / रेड-टॅकल पॉईंट्स
+    playersStats: {}         // 🏃 फ्युचरसाठी: प्लेअर्सचे लाईव्ह आकडे
 };
 
 io.on('connection', (socket) => {
     console.log(`🔌 नवीन युझर कनेक्ट झाला: ${socket.id}`);
 
     // =================================================================
-    // १. होम पेज कनेक्ट झाल्यावर: त्याला सर्व चालू सामने पहिल्याच सेकंदाला मिळणे
+    // १. होम पेज कनेक्ट झाल्यावर: चालू सामन्यांची ताजी यादी मागणे (Onload)
     // =================================================================
     socket.on("request_all_active_matches", () => {
         const currentLiveList = Object.values(globalAppData.activeMatches);
-        console.log(`📡 युझर ${socket.id} ला एकूण ${currentLiveList.length} लाईव्ह सामने पाठवले.`);
+        console.log(`📡 युझर ${socket.id} ला एकूण ${currentLiveList.length} चालू सामने पाठवले.`);
         
-        // फक्त मागणी करणाऱ्या युझरला ताजी लिस्ट पाठवणे
+        // मागणी करणाऱ्या युझरला ताजी लिस्ट देणे
         socket.emit("live_matches_update", currentLiveList);
     });
 
     // =================================================================
-    // २. स्कोअरर पॅनेल इव्हेंट: सामना सुरू करणे, स्कोअर अपडेट करणे किंवा संपवणे
-    // =================================================================
-    // =================================================================
-    // २. स्कोअरर पॅनेल इव्हेंट: सामना सुरू करणे, स्कोअर अपडेट करणे किंवा संपवणे
+    // २. स्कोअरर पॅनेल इव्हेंट: सामना सुरू करणे किंवा स्कोअर अपडेट करणे
     // =================================================================
     socket.on('match_status_changed_or_updated', (matchData) => {
-        if (!matchData || !matchData.mId) {
-            console.log("🚨 [Server Error]: आलेला मॅच डेटा रिकामी आहे किंवा mId नाही!");
+        if (!matchData) {
+            console.log("🚨 [Server]: आलेला मॅच डेटा पूर्णपणे रिकामी आहे!");
             return;
         }
 
-        const mId = matchData.mId;
-        // 🎯 फिक्स: स्टेटस लहान लिपीत करून तपासणे जेणेकरून 'Live' किंवा 'live' दोन्ही चालतील
+        // फायरबेस स्क्रीनशॉटच्या रचनेनुसार आयडी पकडणे
+        const mId = matchData.mId || matchData.matchId || "M_UNKNOWN";
+        
+        // 🔥 फिक्स: अक्षरे लहान असो वा मोठी (Live, 1st_Half_End), घोळ मिटवण्यासाठी lowercase केले
         const currentStatus = matchData.status ? matchData.status.trim().toLowerCase() : "";
 
-        console.log(`📡 [Server Sync]: स्कोअररकडून डेटा आला. Status: ${currentStatus}, Match ID: ${mId}`);
+        console.log(`📡 [Server Incoming]: डेटा धडकला! Status: ${matchData.status} | Match ID: ${mId}`);
 
-        // 🎯 जर सामना 'live' किंवा '1st_half_end' असेल
-        if (currentStatus === "live" || currentStatus === "1st_half_end" || currentStatus === "half time" || currentStatus === "started") {
+        // 🎯 मॅच लाईव्ह किंवा हाफ-टाइमच्या कोणत्याही फॉरमॅटमध्ये असेल तर मेमरीत ठेवणे
+        if (
+            currentStatus === "live" || 
+            currentStatus === "started" || 
+            currentStatus === "1st_half_end" || 
+            currentStatus === "half time" || 
+            currentStatus === "half_time"
+        ) {
             
-            // 🎯 तुझ्या 'confirmStartMatch' च्या ऑब्जेक्टमधील अचूक कीज इथे मॅप केल्या आहेत
+            // 🎨 तुझ्या फायरबेस स्क्रीनशॉटमधील अचूक कीज (Keys) चे १-टू-१ सुरक्षित मॅपिंग
             globalAppData.activeMatches[mId] = {
                 matchId: mId,
-                tournamentId: matchData.tId || "",
-                round: matchData.roundName || matchData.round || "Round 1",
+                tournamentId: matchData.tId || matchData.tournamentId || "",
+                round: matchData.round || matchData.roundName || "Round 1",
                 teamA: matchData.teamAName || matchData.teamA || "Team A",
                 teamB: matchData.teamBName || matchData.teamB || "Team B",
-                scoreA: Number(matchData.scoreA) ?? 0,
-                scoreB: Number(matchData.scoreB) ?? 0,
-                status: matchData.status || "Live",
+                scoreA: matchData.scoreA !== undefined ? Number(matchData.scoreA) : 0,
+                scoreB: matchData.scoreB !== undefined ? Number(matchData.scoreB) : 0,
+                status: matchData.status || "Live", // मूळ स्टेटस जशी आहे तशी ठेवली (उदा. "1st_Half_End")
                 lastRaid: matchData.lastRaid || null
             };
-            console.log(`✅ [Memory Success]: सामना ${mId} सर्व्हरच्या लाईव्ह यादीत लॉक झाला!`);
+            console.log(`✅ [Memory Success]: मॅच ${mId} सर्व्हर मेमरीमध्ये लॉक झाली.`);
 
         } else if (currentStatus === "completed" || currentStatus === "finished") {
+            // सामना संपला असेल तर लाईव्हमधून काढून इतिहासामध्ये ढकलणे
             globalAppData.completedMatches[mId] = matchData;
             delete globalAppData.activeMatches[mId];
-            console.log(`🗑️ सामना ${mId} संपल्यामुळे लाईव्हमधून काढला.`);
+            console.log(`🗑️ मॅच ${mId} संपल्यामुळे मेमरीमधून काढली.`);
         }
 
-        // 📢 सर्व प्रेक्षकांना ताजी यादी ब्रॉडकास्ट करणे
-        const updatedList = Object.values(globalAppData.activeMatches);
-        console.log(`📢 [Broadcast]: सर्व प्रेक्षकांना एकूण ${updatedList.length} सामने पाठवत आहे...`);
-        io.emit("live_matches_update", updatedList);
+        // 📢 पूर्ण गावाला (सर्व प्रेक्षकांना) नवीन ताजी यादी ब्रॉडकास्ट करणे
+        const finalLiveList = Object.values(globalAppData.activeMatches);
+        console.log(`📢 [Broadcast]: एकूण ${finalLiveList.length} सामने हवेत सोडले.`);
+        io.emit("live_matches_update", finalLiveList);
     });
+
     // =================================================================
     // 🚀 फ्युचर डेव्हलपमेंटसाठी अतिरिक्त हुक्स (भविष्यात काम सोपं होईल)
     // =================================================================
