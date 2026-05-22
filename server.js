@@ -38,40 +38,49 @@ io.on('connection', (socket) => {
     // =================================================================
     // २. स्कोअरर पॅनेल इव्हेंट: सामना सुरू करणे, स्कोअर अपडेट करणे किंवा संपवणे
     // =================================================================
+    // =================================================================
+    // २. स्कोअरर पॅनेल इव्हेंट: सामना सुरू करणे, स्कोअर अपडेट करणे किंवा संपवणे
+    // =================================================================
     socket.on('match_status_changed_or_updated', (matchData) => {
-        if (!matchData || !matchData.mId) return;
+        if (!matchData || !matchData.mId) {
+            console.log("🚨 [Server Error]: आलेला मॅच डेटा रिकामी आहे किंवा mId नाही!");
+            return;
+        }
 
         const mId = matchData.mId;
+        // 🎯 फिक्स: स्टेटस लहान लिपीत करून तपासणे जेणेकरून 'Live' किंवा 'live' दोन्ही चालतील
         const currentStatus = matchData.status ? matchData.status.trim().toLowerCase() : "";
 
-        // 🎯 नियम: जर सामना 'live' किंवा '1st_half_end' असेल, तर तो 'Active' कप्प्यात राहील
+        console.log(`📡 [Server Sync]: स्कोअररकडून डेटा आला. Status: ${currentStatus}, Match ID: ${mId}`);
+
+        // 🎯 जर सामना 'live' किंवा '1st_half_end' असेल
         if (currentStatus === "live" || currentStatus === "1st_half_end" || currentStatus === "half time" || currentStatus === "started") {
             
+            // 🎯 तुझ्या 'confirmStartMatch' च्या ऑब्जेक्टमधील अचूक कीज इथे मॅप केल्या आहेत
             globalAppData.activeMatches[mId] = {
                 matchId: mId,
-                tournamentId: matchData.tId || matchData.tournamentId || "",
-                round: matchData.roundName || matchData.round || "League Match",
-                teamA: matchData.teamNameA || matchData.teamA || "Team A",
-                teamB: matchData.teamNameB || matchData.teamB || "Team B",
-                scoreA: Number(matchData.scoreA) || 0,
-                scoreB: Number(matchData.scoreB) || 0,
+                tournamentId: matchData.tId || "",
+                round: matchData.roundName || matchData.round || "Round 1",
+                teamA: matchData.teamAName || matchData.teamA || "Team A",
+                teamB: matchData.teamBName || matchData.teamB || "Team B",
+                scoreA: Number(matchData.scoreA) ?? 0,
+                scoreB: Number(matchData.scoreB) ?? 0,
                 status: matchData.status || "Live",
                 lastRaid: matchData.lastRaid || null
             };
-            console.log(`📝 सामना ${mId} लाईव्ह यादीत अपडेट झाला.`);
+            console.log(`✅ [Memory Success]: सामना ${mId} सर्व्हरच्या लाईव्ह यादीत लॉक झाला!`);
 
         } else if (currentStatus === "completed" || currentStatus === "finished") {
-            
-            // 🏆 सामना संपला की त्याला 'Active' मधून काढून 'Completed' मध्ये ढकलणे
             globalAppData.completedMatches[mId] = matchData;
             delete globalAppData.activeMatches[mId];
-            console.log(`🗑️ सामना ${mId} संपल्यामुळे लाईव्हमधून काढून इतिहासामध्ये सेव्ह केला.`);
+            console.log(`🗑️ सामना ${mId} संपल्यामुळे लाईव्हमधून काढला.`);
         }
 
-        // 📢 पूर्ण गावाला (सर्व प्रेक्षकांना) नवीन ताजी यादी ब्रॉडकास्ट करणे
-        io.emit("live_matches_update", Object.values(globalAppData.activeMatches));
+        // 📢 सर्व प्रेक्षकांना ताजी यादी ब्रॉडकास्ट करणे
+        const updatedList = Object.values(globalAppData.activeMatches);
+        console.log(`📢 [Broadcast]: सर्व प्रेक्षकांना एकूण ${updatedList.length} सामने पाठवत आहे...`);
+        io.emit("live_matches_update", updatedList);
     });
-
     // =================================================================
     // 🚀 फ्युचर डेव्हलपमेंटसाठी अतिरिक्त हुक्स (भविष्यात काम सोपं होईल)
     // =================================================================
