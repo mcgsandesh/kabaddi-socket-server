@@ -24,51 +24,49 @@ io.on('connection', (socket) => {
     console.log(`🔌 नवीन युझर कनेक्ट झाला: ${socket.id}`);
 
     // =================================================================
-    // १. होम पेज कनेक्ट झाल्यावर: मेमरी कप्प्यातील ताजी यादी देणे
+    // 🔍 [TRACKING] १. होम पेज कनेक्ट झाल्यावर मेमरीमधील ताजी यादी देणे
     // =================================================================
     socket.on("request_all_active_matches", () => {
         const currentLiveList = Object.values(globalAppData.activeMatches);
         
         console.log(`\n🔍 [SERVER INQUIRY]: युझर ${socket.id} ने लाईव्ह मॅचेस मागितल्या.`);
-        console.log(`📊 सध्या मेमरीमध्ये असलेले एकूण सामने: ${currentLiveList.length}`);
+        console.log(`📊 सध्या सर्व्हर मेमरीमध्ये असलेले एकूण सामने: ${currentLiveList.length}`);
         
         if (currentLiveList.length > 0) {
-            console.log("🆔 मेमरीमधील उपलब्ध मॅच IDs:", currentLiveList.map(m => m.matchId));
+            console.log("📝 मेमरीमधील उपलब्ध मॅच डेटाचा स्नॅपशॉट:", JSON.stringify(currentLiveList, null, 2));
         } else {
             console.log("⚠️ मेमरी पूर्णपणे कोरी आहे (No Active Matches in Memory).");
         }
         
-        // 📢 फक्त मागणाऱ्या होम पेजला ताजी यादी देणे
         socket.emit("live_matches_update", currentLiveList);
     });
 
     // =================================================================
-    // २. स्कोअरर/ॲडमिन पॅनेल इव्हेंट: "Live" आणि "1st_Half_End" चे कडक चेकिंग
+    // 🔍 [TRACKING] २. स्कोअरर पॅनेलवरून आलेला डेटा तपासून मेमरीत लॉक करणे
     // =================================================================
     socket.on('match_status_changed_or_updated', (matchData) => {
-        console.log("\n📥 [SERVER RECEIVE]: स्कोअरर पॅनेलवरून डेटा धडकला आहे...");
+        console.log("\n📥 [SERVER RECEIVE]: स्कोअरर पॅनेलवरून डेटा सर्व्हरला मिळाला!");
         
         if (!matchData) {
-            console.log("🚨 [SERVER ERROR]: स्कोअररकडून आलेला डेटा पूर्णपणे रिकामा (null) आहे!");
+            console.log("🚨 [SERVER VALIDATION ERROR]: स्कोअररकडून आलेला डेटा पूर्णपणे रिकामा (null) आहे!");
             return;
         }
 
-        // 🆔 [ID EXTRACTION LOGIC]
+        // 📦 कडक ट्रॅकिंग लॉग: नक्की काय काय डेटा आला ते सर्व्हर कन्सोलवर उघड होईल
+        console.log("📦 आलेला कच्चा डेटा (Raw Payload):", JSON.stringify(matchData, null, 2));
+
         const incomingId = matchData.matchId || matchData.mId || matchData.id;
         const incomingTourId = matchData.tournamentId || matchData.tId;
-        
-        // 🎯 डेटाबेसचे अधिकृत स्टेटस (Trim करून जसेच्या तसे तपासणे)
         const statusCheck = matchData.status ? matchData.status.trim() : "Live";
 
         console.log(`🆔 [ID TRACE] -> Match ID: "${incomingId}" | Tournament ID: "${incomingTourId}" | Status: "${statusCheck}"`);
 
-        // जर आयडी सापडलाच नाही तर डेटा कप्प्यात न ठेवता इथेच ब्लॉक करणे
         if (!incomingId) {
-            console.log("%c🚨 [CRITICAL DROP]: स्कोअररच्या डेटामध्ये कोणताही ID सापडला नाही! पॅलोड ड्रॉप केला.", "color: red; font-weight: bold;");
+            console.log("🚨 [SERVER DROP ERROR]: डेटामध्ये कोणताही वैध ID सापडला नाही! पॅलोड ड्रॉप केला.");
             return;
         }
 
-        // 🎯 कडक कंडिशन मॅचिंग (डेटाबेसमधील "Live" आणि "1st_Half_End" अचूक केसेस तपासल्या)
+        // 🎯 अधिकृत स्टेटस "Live" आणि "1st_Half_End" चे अचूक केसेस तपासणे
         if (
             statusCheck === "Live" || 
             statusCheck === "live" || 
@@ -79,7 +77,7 @@ io.on('connection', (socket) => {
             statusCheck === "started"
         ) {
             
-            // सर्व्हर मेमरीमध्ये आयडी गोंधळ मिटवून डेटा लॉक केला 🎯
+            // सर्व्हर मेमरी कप्प्यात डेटा सुरक्षित लॉक केला
             globalAppData.activeMatches[incomingId] = {
                 matchId: incomingId,
                 tournamentId: incomingTourId || "",
@@ -88,12 +86,12 @@ io.on('connection', (socket) => {
                 teamB: matchData.teamB || matchData.teamBName || "Team B",
                 scoreA: matchData.scoreA !== undefined ? Number(matchData.scoreA) : 0,
                 scoreB: matchData.scoreB !== undefined ? Number(matchData.scoreB) : 0,
-                status: statusCheck, // अधिकृत स्टेटस जसाच्या तसा पुढे जाईल
+                status: statusCheck, 
                 lastRaid: matchData.lastRaid || null
             };
             
-            console.log(`✅ [SERVER MEMORY LOCK SUCCESS]: मॅच "${incomingId}" मेमरी कप्प्यात सुरक्षित बसली! -> (Score A: ${matchData.scoreA} | Score B: ${matchData.scoreB} | Status: ${statusCheck})`);
-            console.log("📋 सध्या मेमरीमधील सर्व चालू मॅच IDs:", Object.keys(globalAppData.activeMatches));
+            console.log(`💾 [SERVER MEMORY LOCK SUCCESS]: मॅच "${incomingId}" मेमरी कप्प्यात सुरक्षित बसली!`);
+            console.log("📊 मेमरीमधील ताजी मॅच स्थिती:", JSON.stringify(globalAppData.activeMatches[incomingId], null, 2));
 
         } else if (
             statusCheck.toLowerCase() === "completed" || 
@@ -104,12 +102,10 @@ io.on('connection', (socket) => {
             console.log(`🗑️ [SERVER MEMORY REMOVE]: मॅच "${incomingId}" संपल्यामुळे लाईव्ह कप्प्यामधून डिलीट केली.`);
         }
 
-        // =============================================================
-        // 📢 [CRITICAL BROADCAST]: संपूर्ण इंटरनेटवरील सर्व होम पेजेसना न मागता ताजा डेटा फेका!
-        // =============================================================
+        // 📢 संपूर्ण इंटरनेटवरील सर्व होम पेजेसना न मागता डेटा ब्रॉडकास्ट करणे
         const finalLiveList = Object.values(globalAppData.activeMatches);
+        console.log(`📢 [SERVER BROADCAST SENT]: सर्व होम पेजेसना एकूण ${finalLiveList.length} सामने रवाना केले.`);
         io.emit("live_matches_update", finalLiveList);
-        console.log(`📢 [Global Broadcast Sent]: एकूण ${finalLiveList.length} सामन्यांची ताजी यादी सर्व कनेक्टेड होम पेजेसना रवाना केली.`);
     });
 
     socket.on('disconnect', () => {
