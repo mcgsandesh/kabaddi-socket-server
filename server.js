@@ -1,4 +1,3 @@
-
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -13,28 +12,26 @@ const io = new Server(server, {
     }
 });
 
-// 🧠 प्युअर सर्व्हर मेमरी (फायरबेस रीडचा खर्च = ०)
+// 🧠 प्युअर सर्व्हर मेमरी कप्पा
 let globalAppData = {
     activeMatches: {},       
-    completedMatches: {},    
-    tournaments: {},         
-    playersStats: {}         
+    completedMatches: {}
 };
 
 io.on('connection', (socket) => {
     console.log(`🔌 नवीन युझर कनेक्ट झाला: ${socket.id}`);
 
     // =================================================================
-    // 🔍 [TRACKING] १. होम पेज कनेक्ट झाल्यावर मेमरीमधील ताजी यादी देणे
+    // १. होम पेज कनेक्ट झाल्यावर: मेमरी कप्प्यातील ताजी यादी देणे
     // =================================================================
     socket.on("request_all_active_matches", () => {
         const currentLiveList = Object.values(globalAppData.activeMatches);
         
         console.log(`\n🔍 [SERVER INQUIRY]: युझर ${socket.id} ने लाईव्ह मॅचेस मागितल्या.`);
-        console.log(`📊 सध्या सर्व्हर मेमरीमध्ये असलेले एकूण सामने: ${currentLiveList.length}`);
+        console.log(`📊 सध्या मेमरीमध्ये असलेले एकूण सामने: ${currentLiveList.length}`);
         
         if (currentLiveList.length > 0) {
-            console.log("📝 मेमरीमधील उपलब्ध मॅच डेटाचा स्नॅपशॉट:", JSON.stringify(currentLiveList, null, 2));
+            console.log("🆔 मेमरीमधील उपलब्ध मॅच IDs:", currentLiveList.map(m => m.matchId));
         } else {
             console.log("⚠️ मेमरी पूर्णपणे कोरी आहे (No Active Matches in Memory).");
         }
@@ -42,9 +39,6 @@ io.on('connection', (socket) => {
         socket.emit("live_matches_update", currentLiveList);
     });
 
-    // =================================================================
-    // 🔍 [TRACKING] २. स्कोअरर पॅनेलवरून आलेला डेटा तपासून मेमरीत लॉक करणे
-    // =================================================================
     // =================================================================
     // २. स्कोअरर पॅनेल इव्हेंट: Tournament ID + Match ID कॉम्बिनेशनसह लॉक
     // =================================================================
@@ -56,7 +50,6 @@ io.on('connection', (socket) => {
             return;
         }
 
-        // 📦 कडक ट्रॅकिंग लॉग: नक्की काय काय डेटा आला ते सर्व्हर कन्सोलवर उघड होईल
         console.log("📦 आलेला कच्चा डेटा (Raw Payload):", JSON.stringify(matchData, null, 2));
 
         const incomingId = matchData.matchId || matchData.mId || matchData.id;
@@ -99,7 +92,6 @@ io.on('connection', (socket) => {
             };
             
             console.log(`💾 [RAM SAVE SUCCESS]: युनिक कप्प्यात मॅच लॉक झाली -> की: ${combinedKey}`);
-            // 🟢 फिक्स: इथे [incomingId] ऐवजी [combinedKey] वापरला, ज्यामुळे अचूक डेटा कन्सोलवर प्रिंट होईल!
             console.log("📊 मेमरीमधील ताजी मॅच स्थिती:", JSON.stringify(globalAppData.activeMatches[combinedKey], null, 2));
 
         } else if (
@@ -119,3 +111,13 @@ io.on('connection', (socket) => {
         console.log(`📢 [SERVER BROADCAST SENT]: सर्व होम पेजेसना एकूण ${finalLiveList.length} सामने रवाना केले.`);
         io.emit("live_matches_update", finalLiveList);
     });
+
+    socket.on('disconnect', () => {
+        console.log(`❌ युझर डिस्कनेक्ट झाला: ${socket.id}`);
+    });
+}); // 🎯 [FIX]: हा io.on चा शेवटचा कंस एकदम परफेक्ट मॅच केला!
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+    console.log(`🚀 कबड्डी सॉकेट सर्व्हर पोर्ट ${PORT} वर जिवंत झाला आहे!`);
+});
