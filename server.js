@@ -44,6 +44,9 @@ io.on('connection', (socket) => {
     // =================================================================
     // 🔍 [TRACKING] २. स्कोअरर पॅनेलवरून आलेला डेटा तपासून मेमरीत लॉक करणे
     // =================================================================
+    // =================================================================
+    // २. स्कोअरर पॅनेल इव्हेंट: Tournament ID + Match ID कॉम्बिनेशनसह लॉक
+    // =================================================================
     socket.on('match_status_changed_or_updated', (matchData) => {
         console.log("\n📥 [SERVER RECEIVE]: स्कोअरर पॅनेलवरून डेटा सर्व्हरला मिळाला!");
         
@@ -66,6 +69,10 @@ io.on('connection', (socket) => {
             return;
         }
 
+        // 🎯 [COMBINED UNIQUE KEY]: टूर्नामेंट आयडी आणि मॅच आयडी एकत्र करून युनिक की बनवणे
+        const combinedKey = incomingTourId ? `${incomingTourId}_${incomingId}` : incomingId;
+        console.log(`🔑 [GENERATED KEY]: सर्व्हर मेमरीसाठी तयार झालेली युनिक की: "${combinedKey}"`);
+
         // 🎯 अधिकृत स्टेटस "Live" आणि "1st_Half_End" चे अचूक केसेस तपासणे
         if (
             statusCheck === "Live" || 
@@ -78,7 +85,7 @@ io.on('connection', (socket) => {
         ) {
             
             // सर्व्हर मेमरी कप्प्यात डेटा सुरक्षित लॉक केला
-            globalAppData.activeMatches[incomingId] = {
+            globalAppData.activeMatches[combinedKey] = {
                 matchId: incomingId,
                 tournamentId: incomingTourId || "",
                 round: matchData.round || matchData.roundName || "League Match",
@@ -90,16 +97,20 @@ io.on('connection', (socket) => {
                 lastRaid: matchData.lastRaid || null
             };
             
-            console.log(`💾 [SERVER MEMORY LOCK SUCCESS]: मॅच "${incomingId}" मेमरी कप्प्यात सुरक्षित बसली!`);
-            console.log("📊 मेमरीमधील ताजी मॅच स्थिती:", JSON.stringify(globalAppData.activeMatches[incomingId], null, 2));
+            console.log(`💾 [RAM SAVE SUCCESS]: युनिक कप्प्यात मॅच लॉक झाली -> की: ${combinedKey}`);
+            // 🟢 फिक्स: इथे [incomingId] ऐवजी [combinedKey] वापरला, ज्यामुळे अचूक डेटा कन्सोलवर प्रिंट होईल!
+            console.log("📊 मेमरीमधील ताजी मॅच स्थिती:", JSON.stringify(globalAppData.activeMatches[combinedKey], null, 2));
 
         } else if (
             statusCheck.toLowerCase() === "completed" || 
             statusCheck.toLowerCase() === "finished"
         ) {
-            globalAppData.completedMatches[incomingId] = matchData;
-            delete globalAppData.activeMatches[incomingId];
-            console.log(`🗑️ [SERVER MEMORY REMOVE]: मॅच "${incomingId}" संपल्यामुळे लाईव्ह कप्प्यामधून डिलीट केली.`);
+            if (!globalAppData.completedMatches) globalAppData.completedMatches = {};
+            globalAppData.completedMatches[combinedKey] = matchData;
+            
+            // लाईव्ह कप्प्यामधून कम्बाईन की उडवणे
+            delete globalAppData.activeMatches[combinedKey];
+            console.log(`🗑️ [SERVER MEMORY REMOVE]: मॅच "${incomingId}" (Key: ${combinedKey}) संपल्यामुळे लाईव्ह कप्प्यामधून डिलीट केली.`);
         }
 
         // 📢 संपूर्ण इंटरनेटवरील सर्व होम पेजेसना न मागता डेटा ब्रॉडकास्ट करणे
@@ -107,13 +118,3 @@ io.on('connection', (socket) => {
         console.log(`📢 [SERVER BROADCAST SENT]: सर्व होम पेजेसना एकूण ${finalLiveList.length} सामने रवाना केले.`);
         io.emit("live_matches_update", finalLiveList);
     });
-
-    socket.on('disconnect', () => {
-        console.log(`❌ युझर डिस्कनेक्ट झाला: ${socket.id}`);
-    });
-});
-
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
-    console.log(`🚀 कबड्डी सॉकेट सर्व्हर पोर्ट ${PORT} वर जिवंत झाला आहे!`);
-});
