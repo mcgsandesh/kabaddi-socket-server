@@ -34,6 +34,7 @@ io.on('connection', (socket) => {
         // 🎯 टूर्नामेंट आणि मॅच आयडीची कम्बाईन युनिक की
         const combinedKey = incomingTourId ? `${incomingTourId}_${incomingId}` : incomingId;
 
+        // 🚨 [💥 NEW STATUS GATEKEEPER]: ५-५ आणि सुवर्ण रेडच्या स्टेटसला परवानगी देणे
         if (
             statusCheck === "Live" || 
             statusCheck === "live" || 
@@ -41,7 +42,9 @@ io.on('connection', (socket) => {
             statusCheck === "1st_half_end" ||
             statusCheck === "half time" ||
             statusCheck === "half_time" ||
-            statusCheck === "started"
+            statusCheck === "started" ||
+            statusCheck === "five_raid" ||       // 🟢 ५-५ मोड चालू असताना
+            statusCheck === "golden_raid"       // 🟢 सुवर्ण रेड चालू असताना
         ) {
             
             // सर्व्हर मेमरीमध्ये कडक लॉक
@@ -51,26 +54,32 @@ io.on('connection', (socket) => {
                 round: matchData.round || "League Match",
                 teamA: matchData.teamA || "Team A",
                 teamB: matchData.teamB || "Team B",
-                scoreA: Number(matchData.scoreA) || 0,
-                scoreB: Number(matchData.scoreB) || 0,
                 status: statusCheck, 
                 lastRaid: matchData.lastRaid || null,
                 
-                // 🎯 सर्व्हर RAM मध्ये पूर्ण डेटा साठवला!
+                // 🎯 [SINGLE SOURCE OF TRUTH]: सुटे आकडे काढून थेट मास्टर ऑब्जेक्ट सर्व्हर RAM मध्ये सेव्ह!
+                scoreCard: matchData.scoreCard || {
+                    mainMatch:  { teamA: Number(matchData.scoreA || 0), teamB: Number(matchData.scoreB || 0) },
+                    fiveRaid:   { teamA: 0, teamB: 0 },
+                    goldenRaid: { teamA: 0, teamB: 0 }
+                },
+                
+                // सर्व्हर RAM मध्ये इतर पूर्ण डेटा सुरक्षित
                 timeline: matchData.timeline || [],
                 statsA: matchData.statsA || [],
                 statsB: matchData.statsB || []
             };
             
-            console.log(`\n💾 [SERVER MEMORY UPDATED]: की "${combinedKey}" यशस्वी लॉक!`);
-            console.log(`📊 रेड्स संख्या: ${globalAppData.activeMatches[combinedKey].timeline.length} | StatsA: ${globalAppData.activeMatches[combinedKey].statsA.length}`);
+            console.log(`\n💾 [SERVER MEMORY UPDATED]: की "${combinedKey}" [Status: ${statusCheck}] यशस्वी लॉक!`);
+            console.log(`📊 मुख्य स्कोअर -> A: ${globalAppData.activeMatches[combinedKey].scoreCard.mainMatch.teamA} vs B: ${globalAppData.activeMatches[combinedKey].scoreCard.mainMatch.teamB}`);
 
         } else if (statusCheck.toLowerCase() === "completed" || statusCheck.toLowerCase() === "finished") {
             globalAppData.completedMatches[combinedKey] = matchData;
             delete globalAppData.activeMatches[combinedKey];
-            console.log(`🗑️ [REMOVE]: मॅच ${incomingId} मेमरीमधून क्लिन केली.`);
+            console.log(`🗑️ [REMOVE]: मॅच ${incomingId} मेमरीमधून क्लिन केली (सामना संपला).`);
         }
 
+        // सर्व कनेक्टेड प्रेक्षकांना (Live Display Screens) फ्रेश लिस्ट ब्रॉडकास्ट करणे
         const finalLiveList = Object.values(globalAppData.activeMatches);
         io.emit("live_matches_update", finalLiveList);
     });
